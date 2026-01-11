@@ -11,6 +11,7 @@ class ListingFilter(django_filters.FilterSet):
     district = django_filters.CharFilter(field_name="district", lookup_expr='icontains')
     property_type = django_filters.CharFilter(field_name="property_type")
     is_active = django_filters.BooleanFilter(field_name="is_active")
+    owner = django_filters.NumberFilter(field_name="owner__id")
 
     class Meta:
         model = Listing

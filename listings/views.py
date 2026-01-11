@@ -1,27 +1,53 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, filters, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Count, Q
 
-from .models import Listing
-from .serializers import (
-    ListingSerializer,
-    ListingCreateSerializer
-)
+from .models import Listing, ViewHistory
+from .serializers import ListingSerializer, ListingCreateSerializer
+from .filters import ListingFilter
 from users.permissions import IsLandlordOrReadOnly
 
-
 class ListingViewSet(viewsets.ModelViewSet):
-    queryset = Listing.objects.all()
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['title', 'description']
-    ordering_fields = ['price', 'created_at']
+    serializer_class = ListingSerializer
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = ListingFilter
+    search_fields = ['title', 'description', 'location', 'city', 'district']
+    ordering_fields = ['price', 'created_at', 'updated_at', 'rooms']
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsLandlordOrReadOnly]
 
-    permission_classes = [permissions.IsAuthenticated, IsLandlordOrReadOnly]
+    def get_queryset(self):
+        # Базовый queryset с оптимизацией запросов
+        queryset = Listing.objects.select_related('owner').prefetch_related('images')
 
-    http_method_names = ['get', 'post', 'put', 'patch', 'delete']
+        # Для аутентифицированных пользователей показываем все активные
+        # Для неаутентифицированных - тоже все активные
+        # Landlord видит и свои неактивные тоже
+        if self.request.user.is_authenticated:
+            if self.request.user.user_type == 'landlord':
+                # Landlord видит ВСЕ свои объявления
+                queryset = queryset.filter(owner=self.request.user)
+            else:
+                # Tenant видит все активные объявления
+                queryset = queryset.filter(is_active=True)
+        else:
+            # Неаутентифицированные видят только активные
+            queryset = queryset.filter(is_active=True)
+
+        # Сохраняем просмотр если пользователь аутентифицирован
+        if self.request.user.is_authenticated and self.action == 'retrieve':
+            listing_id = self.kwargs.get('pk')
+            if listing_id:
+                ViewHistory.objects.get_or_create(
+                    user=self.request.user,
+                    listing_id=listing_id
+                )
+
+        return queryset
 
     def get_serializer_class(self):
-        if self.action == 'create':
+        if self.action in ['create', 'update', 'partial_update']:
             return ListingCreateSerializer
         return ListingSerializer
 
@@ -30,26 +56,31 @@ class ListingViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Только арендодатель может создавать объявления")
         serializer.save(owner=self.request.user)
 
-    def get_queryset(self):
-        queryset = Listing.objects.filter(is_active=True)
+    @action(detail=True, methods=['post'])
+    def toggle_active(self, request, pk=None):
+        """Переключение статуса активность объявления (только для владельца)"""
+        listing = self.get_object()
+        if listing.owner != request.user:
+            return Response(
+                {'error': 'You are not the owner of this listing'},
+                status=status.HTTP_403_FORBIDDEN
+            )
 
-        city = self.request.query_params.get('city')
-        if city:
-            queryset = queryset.filter(city__icontains=city)
+        listing.is_active = not listing.is_active
+        listing.save()
 
-        min_price = self.request.query_params.get('min_price')
-        max_price = self.request.query_params.get('max_price')
-        if min_price:
-            queryset = queryset.filter(price__gte=min_price)
-        if max_price:
-            queryset = queryset.filter(price__lte=max_price)
+        return Response({
+            'id': listing.id,
+            'is_active': listing.is_active,
+            'message': f'Listing is now {"active" if listing.is_active else "inactive"}'
+        })
 
-        rooms = self.request.query_params.get('rooms')
-        if rooms:
-            queryset = queryset.filter(rooms=rooms)
+    @action(detail=False, methods=['get'])
+    def popular(self, request):
+        """Популярные объявления (по количеству просмотров)"""
+        popular_listings = Listing.objects.filter(is_active=True).annotate(
+            views_count=Count('views')
+        ).order_by('-views_count')[:10]
 
-        housing_type = self.request.query_params.get('housing_type')
-        if housing_type:
-            queryset = queryset.filter(housing_type=housing_type)
-
-        return queryset
+        serializer = self.get_serializer(popular_listings, many=True)
+        return Response(serializer.data)

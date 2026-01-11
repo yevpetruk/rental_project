@@ -1,0 +1,16 @@
+# requirements.txt
+# requirements.txt
+Django==5.2
+djangorestframework==3.15.2
+djangorestframework-simplejwt==5.3.1
+django-filter==24.3
+django-cors-headers==4.4.0
+mysqlclient==2.2.4
+Pillow==10.3.0
+gunicorn==21.2.0
+python-dotenv==1.0.1
+drf-yasg==1.21.8
+whitenoise==6.6.0
+# psycopg2-binary==2.9.9  # Если будете использовать PostgreSQL
+# redis==5.0.1           # Для кэширования
+# celery==5.3.6          # Для фоновых задач

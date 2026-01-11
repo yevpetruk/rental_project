@@ -1,37 +1,31 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-
-User = get_user_model()
+from .models import User
 
 
 class UserSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
-
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'user_type', 'phone', 'first_name', 'last_name']
+        fields = ("id", "email", "password", "user_type", "username")
         extra_kwargs = {
-            'password': {'write_only': True}
+            "password": {"write_only": True},
+            "email": {"required": True}
         }
 
+    def validate_email(self, value):
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Пользователь с таким email уже существует")
+        return value
+
     def create(self, validated_data):
+        username = validated_data.get("username")
+        email = validated_data["email"]
+        password = validated_data["password"]
+        user_type = validated_data.get("user_type")
+
         user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data.get('email', ''),
-            password=validated_data['password'],
-            user_type=validated_data.get('user_type', 'tenant'),
-            phone=validated_data.get('phone', ''),
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', '')
+            username=username,
+            email=email,
+            password=password,
+            user_type=user_type
         )
         return user
-
-
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    @classmethod
-    def get_token(cls, user):
-        token = super().get_token(user)
-        token['user_type'] = user.user_type
-        token['username'] = user.username
-        return token

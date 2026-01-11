@@ -1,6 +1,8 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 
+
+
 class IsLandlordOrReadOnly(BasePermission):
     """
     Читать могут все авторизованные,

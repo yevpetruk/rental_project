@@ -28,6 +28,15 @@ class Listing(models.Model):
     def __str__(self):
         return f"{self.title} ({self.property_type}) - {self.price}€"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['city', 'is_active']),
+            models.Index(fields=['price']),
+            models.Index(fields=['property_type']),
+            models.Index(fields=['created_at']),
+        ]
+        ordering = ['-created_at']
+
 
 class ListingImage(models.Model):
     listing = models.ForeignKey(Listing, on_delete=models.CASCADE, related_name='images')

@@ -8,28 +8,24 @@ from bookings.models import Booking
 class ReviewViewSet(viewsets.ModelViewSet):
     serializer_class = ReviewSerializer
     permission_classes = [permissions.IsAuthenticated]
-    queryset = Review.objects.all()
+
 
     def get_queryset(self):
         user = self.request.user
-
-        if not hasattr(user, 'user_type'):
-            return Review.objects.none()
+        queryset = Review.objects.select_related('listing', 'author', 'booking')
 
         if user.user_type == 'landlord':
-            # Арендодатель видит отзывы на свои объявления
-            return Review.objects.filter(listing__owner=user)
+            return queryset.filter(listing__owner=user)
         else:
-            # Арендатор видит только свои отзывы
-            return Review.objects.filter(author=user)
+            return queryset.filter(author=user)
 
     def perform_create(self, serializer):
         booking = serializer.validated_data['booking']
 
         # Проверяем, что бронирование завершено
-        if booking.status != 'completed':
+        if booking.status not in [Booking.STATUS_COMPLETED, Booking.STATUS_APPROVED]:
             return Response(
-                {'error': 'Can only review completed bookings'},
+                {'error': 'Can only review completed or approved bookings'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
